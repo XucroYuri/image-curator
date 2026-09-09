@@ -10,7 +10,7 @@ Thanks for helping improve `image-curator`. Small, focused pull requests are eas
 4. Add or update tests for behavior changes, using generated fixtures rather than personal image libraries.
 5. Update documentation or the example configuration when a user-facing option changes.
 
-Do not commit model weights, image files, credentials, access tokens, private hostnames, private network addresses, or machine-specific absolute paths.
+Do not commit model weights, image files, credentials, access tokens, private hostnames, private network addresses, or machine-specific absolute paths. Follow [the public repository privacy boundary](docs/privacy-boundary.md) and verify the staged index before pushing.
 
 ## Pull requests
 

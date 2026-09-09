@@ -114,6 +114,8 @@ MoAT 在同一次 ONNX 调用中产生 WD14 评级、top tags 和归一化向量
 
 处理阶段、证据边界与模型策略见 [docs/architecture.md](docs/architecture.md) 和 [docs/model-policy.md](docs/model-policy.md)。
 
+公开仓库的隐私边界、合成示例约定和发布前检查见 [docs/privacy-boundary.md](docs/privacy-boundary.md)。仓库中的路径、文件名和配置值均为可替换的示例，不代表任何真实部署。
+
 ## 开发 | Development
 
 ```bash
