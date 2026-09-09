@@ -16,6 +16,7 @@ from .inference import CombinedAnalysisAdapter, load_adapter
 from .onnx_adapters import OnnxDependencyError, WD14MoatNudeNetAdapter
 from .readonly import snapshot_source
 from .reprocess_cli import add_reprocess_parser, handle_reprocess
+from .migration_cli import add_migrate_parser, handle_migrate
 from .resources import discover_resources, plan_as_dict
 from .routing import route
 from .scan import IMAGE_EXTENSIONS, scan_and_enqueue
@@ -132,6 +133,10 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--min-accepted", type=int, default=5)
     calibrate.add_argument("--min-unknown", type=int, default=1)
     add_reprocess_parser(commands)
+    add_migrate_parser(commands)
+    mode = commands.add_parser("resource-mode", help="write an explicit local execution mode")
+    mode.add_argument("file", type=Path)
+    mode.add_argument("mode", choices=("quiet", "balanced", "performance"))
     return parser
 
 
@@ -210,4 +215,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             _print_json(handle_reprocess(args))
         except (FileNotFoundError, KeyError, RuntimeError, TypeError, ValueError) as error:
             parser.error(str(error))
+    elif args.command == "migrate":
+        try:
+            _print_json(handle_migrate(args))
+        except (FileNotFoundError, KeyError, RuntimeError, TypeError, ValueError) as error:
+            parser.error(str(error))
+    elif args.command == "resource-mode":
+        profiles = {
+            "quiet": {"max_workers": 0, "gpu_enabled": False, "decode_threads": 1,
+                      "migration_parallelism": 1},
+            "balanced": {"max_workers": 1, "gpu_enabled": True, "decode_threads": 2, "migration_parallelism": 1},
+            "performance": {"max_workers": 2, "gpu_enabled": True, "decode_threads": 4, "migration_parallelism": 1},
+        }
+        args.file.parent.mkdir(parents=True, exist_ok=True)
+        args.file.write_text(json.dumps({"mode": args.mode, **profiles[args.mode]}, ensure_ascii=False,
+                                        sort_keys=True) + "\n", encoding="utf-8")
+        _print_json({"file": str(args.file), "mode": args.mode, **profiles[args.mode]})
     return 0
