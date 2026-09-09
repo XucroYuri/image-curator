@@ -1,0 +1,23 @@
+# Small deterministic configuration for local and CI smoke tests.
+scan:
+  roots: ["./tests/fixtures/images"]
+  follow_symlinks: false
+  include_extensions: [".jpg", ".jpeg", ".png", ".webp"]
+  exclude: []
+  read_only: true
+checkpoint:
+  path: "./.ci-output/checkpoint.sqlite"
+  resume: true
+metadata:
+  extract_embedded: true
+  preserve_raw: false
+stages:
+  moat: {enabled: true, min_confidence: 0.80}
+  siglip: {enabled: false, min_confidence: 0.75}
+  vlm: {enabled: false, min_confidence: 0.85}
+policy:
+  unknown_action: "review"
+  allow_file_mutation: false
+outputs:
+  directory: "./.ci-output"
+  format: "jsonl"

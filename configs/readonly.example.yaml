@@ -1,0 +1,37 @@
+# Copy this file before editing. Relative paths make the example portable.
+scan:
+  roots:
+    - "./sample-library"
+  follow_symlinks: false
+  include_extensions: [".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff"]
+  exclude: ["**/.git/**", "**/.cache/**"]
+  read_only: true
+
+checkpoint:
+  path: "./curation-output/checkpoint.sqlite"
+  resume: true
+
+metadata:
+  extract_embedded: true
+  preserve_raw: false
+  sidecar_patterns: ["{stem}.xmp", "{stem}.json"]
+
+stages:
+  moat:
+    enabled: true
+    min_confidence: 0.80
+  siglip:
+    enabled: false
+    min_confidence: 0.75
+  vlm:
+    enabled: false
+    min_confidence: 0.85
+
+policy:
+  unknown_action: "review"
+  allow_file_mutation: false
+  separate_dimensions: ["safety", "quality", "publish_value"]
+
+outputs:
+  directory: "./curation-output"
+  format: "jsonl"

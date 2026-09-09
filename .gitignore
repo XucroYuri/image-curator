@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+.omo/
+
+# Reports, indexes, feature stores, and local run artifacts
+reports/
+report/
+artifacts/
+features/
+feature-store/
+feature_store/
+embeddings/
+indexes/
+index/
+*.parquet
+*.feather
+*.npy
+*.npz
+
+# Local configuration and generated output
+*.local.yaml
+*.local.yml
+curation-output/
+checkpoints/
+.ci-output/
+*.sqlite
+*.sqlite3
+*.db
+*.jsonl
+
+# Model artifacts and large local inputs
+models/
+weights/
+sample-library/
+originals/
+original-images/
+raw-images/
+raw/
+source-images/
+input-images/
+image-library/
+datasets/
+data/
+*.onnx
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.h5
+*.msgpack
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
