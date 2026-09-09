@@ -18,7 +18,7 @@ An item may be technically strong but unsafe, safe but low quality, identity-unk
 ## Stage policy
 
 1. Read metadata and source bytes through the read-only guard. Preserve raw metadata only when an operator has made an explicit, reviewed choice; the example configuration defaults `preserve_raw: false`.
-2. Run MoAT and NudeNet only as evidence-producing stages. NudeNet outputs inform `safety`; MoAT similarity supports identity routing. Neither stage is a publication decision.
+2. Run MoAT and NudeNet only as evidence-producing stages. The built-in ONNX adapter requires explicit local model/tag paths and never downloads weights. NudeNet outputs inform `safety`; MoAT similarity supports identity routing. Neither stage is a publication decision.
 3. Compare embeddings with a user-owned reference set using an open-set classifier. The classifier must expose top scores, the score margin and an `unknown` path.
 4. Send only disagreement or high-value uncertainty to an independent SigLIP check. A model agreement is evidence, not ground truth.
 5. If disagreement persists, a caller may provide selected reference crops to a VLM. The request must state the allowed answer set, include an abstain/unknown answer, and record the model/service version. Full-library uploads are out of scope.

@@ -17,14 +17,14 @@ flowchart LR
     E --> I[Audited candidate output]
 ```
 
-The diagram describes the target operating model. The Alpha package currently implements the read-only scanner, duplicate occurrence tracking, checkpoint store, resumable Pillow/adapter extraction, resource planner, metadata evidence digest, MoAT vector helpers, NudeNet-compatible decoding, reference-set open-set classification, routing and threshold calibration. A caller supplies model adapters and orchestration for stages that are not built into the package.
+The diagram describes the target operating model. The Alpha package currently implements the read-only scanner, duplicate occurrence tracking, checkpoint store, resumable Pillow/adapter extraction, bounded technical evidence, resource planner, metadata evidence digest, an explicit user-supplied WD14 MoAT/NudeNet ONNX path, reference-set open-set classification, routing and threshold calibration. A caller supplies orchestration and adapters for SigLIP, VLM, and any model outside that local ONNX path.
 
 ## Stage contracts
 
 | Stage | Evidence collected | Boundary and next action |
 | --- | --- | --- |
 | Discovery | Stable source snapshot, extension, size, timestamps and content hash | Never follows symlinks unless explicitly requested; a changed source is recorded as an error and not silently accepted. |
-| Metadata | Filesystem fields, embedded fields and sidecar presence; by default only keys, counts and a digest are retained | Metadata is evidence, not a label. Parsing failures remain visible. |
+| Metadata and technical | Filesystem fields, embedded field keys/digest, dimensions, bounded luminance/entropy/clipping/edge statistics | Metadata and image statistics are evidence, not labels. Parsing failures remain visible, and technical thresholds require calibration. |
 | MoAT + NudeNet | Compact embedding and safety-related detector evidence | MoAT similarity and NudeNet scores are signals. They do not decide identity or publishing value. |
 | Reference-set open set | Top references, similarity, margin and calibrated acceptance state | A low margin, missing reference, conflicting evidence or out-of-distribution sample becomes `unknown`. |
 | SigLIP disagreement | An independent semantic signal and disagreement reason | Disagreement is routed to review or the next expensive stage; it is never averaged away silently. |
@@ -45,4 +45,4 @@ The package does not provide an automatic publish, delete, move or rename operat
 
 ## Optional model adapters
 
-Model runtimes are optional and supplied by the caller. The package does not bundle or download weights. Before enabling an adapter, the operator must verify its model license, dataset terms, service terms, data-transfer behavior, and retention behavior. A remote VLM connector must be an explicit opt-in with a documented crop, prompt, recipient and retention policy.
+Model runtimes are optional and supplied by the caller. The package does not bundle or download weights. Before enabling an adapter, the operator must verify its model license, dataset terms, service terms, data-transfer behavior, and retention behavior. A `module:factory` adapter is trusted Python code with the process's file and network permissions; the protocol is a data contract, not a sandbox. A remote VLM connector must be an explicit opt-in with a documented crop, prompt, recipient and retention policy.

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "image-curator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Resource-aware, resumable, metadata-first curation for large image libraries"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,12 +26,21 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "numpy>=1.26",
   "pytest>=8.0",
   "pytest-cov>=5.0",
   "ruff>=0.6",
 ]
 numerics = [
   "numpy>=1.26",
+]
+onnx = [
+  "numpy>=1.26",
+  "onnxruntime>=1.19",
+]
+onnx-gpu = [
+  "numpy>=1.26",
+  "onnxruntime-gpu>=1.19; platform_system != 'Darwin'",
 ]
 siglip = [
   "numpy>=1.26",
@@ -43,6 +52,7 @@ vlm = [
 ]
 inference = [
   "numpy>=1.26",
+  "onnxruntime>=1.19",
   "torch>=2.2",
   "transformers>=4.40",
   "openai>=1.40",

@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
+
+from PIL import Image
+
+
+@dataclass(frozen=True)
+class AnalysisResult:
+    """Structured optional inference output merged into one checkpoint item."""
+
+    embedding: Sequence[float] | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+    features: dict[str, Any] = field(default_factory=dict)
 
 
 @runtime_checkable
@@ -18,6 +30,16 @@ class InferenceAdapter(Protocol):
         """Return one embedding for a read-only source; never modify `source`."""
 
 
+@runtime_checkable
+class AnalysisAdapter(Protocol):
+    """Adapter using the already-decoded Pillow image and optional source bytes."""
+
+    name: str
+
+    def analyze(self, image: Image.Image, image_bytes: bytes, source: Path) -> AnalysisResult:
+        """Return structured analysis without reading, writing, or decoding `source` again."""
+
+
 class CallableInferenceAdapter:
     """Wrap a caller-owned embedding function without importing a model runtime."""
 
@@ -27,6 +49,34 @@ class CallableInferenceAdapter:
 
     def embed(self, image_bytes: bytes, source: Path) -> Sequence[float]:
         return self._embedder(image_bytes, source)
+
+
+class CombinedAnalysisAdapter:
+    """Combine structured adapters and legacy embedding adapters after one image decode."""
+
+    def __init__(self, *adapters: AnalysisAdapter | InferenceAdapter):
+        if not adapters:
+            raise ValueError("at least one adapter is required")
+        self.adapters = adapters
+        self.name = "+".join(adapter.name for adapter in adapters)
+
+    def analyze(self, image: Image.Image, image_bytes: bytes, source: Path) -> AnalysisResult:
+        embedding: Sequence[float] | None = None
+        features: dict[str, Any] = {}
+        evidence: dict[str, Any] = {}
+        for adapter in self.adapters:
+            if isinstance(adapter, AnalysisAdapter):
+                result = adapter.analyze(image, image_bytes, source)
+            else:
+                result = AnalysisResult(embedding=adapter.embed(image_bytes, source),
+                                        features={"adapter": adapter.name})
+            if result.embedding is not None:
+                if embedding is not None:
+                    raise ValueError("combined adapters produced more than one embedding")
+                embedding = result.embedding
+            features[adapter.name] = result.features
+            evidence[adapter.name] = result.evidence
+        return AnalysisResult(embedding=embedding, features=features, evidence=evidence)
 
 
 def load_adapter(specification: str) -> InferenceAdapter:

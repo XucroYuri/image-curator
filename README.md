@@ -33,10 +33,10 @@ python -m image_curator --help
 
 ## 当前支持边界 | Current scope
 
-- 已提供资源发现与保守资源规划、只读扫描、重复文件位置追踪、内容哈希 checkpoint、可断点元数据/适配器提取、元数据证据摘要、MoAT 向量存储辅助、开放集参考集分类、阈值校准和路由原语。
+- 已提供资源发现与保守资源规划、只读扫描、重复文件位置追踪、内容哈希 checkpoint、可断点元数据/适配器提取、有界技术质量信号、元数据证据摘要、用户自备权重的 WD14 MoAT/NudeNet ONNX 分析、开放集参考集分类、阈值校准和路由原语。
 - `configs/readonly.example.yaml` 是跨运行器的策略模板；当前 CLI 使用显式参数，尚未把 YAML 配置自动编排成完整端到端运行。
 - Alpha 版本不会自动移动、重命名、删除或发布文件，也不会把模型输出当作最终事实。人工复核和审计记录是发布前置条件。
-- 仓库不分发 MoAT、NudeNet、SigLIP 或 VLM 权重，也不替用户下载权重。使用者须自行取得模型、核对模型和服务许可证，并通过适配器接入。
+- 仓库不分发 MoAT、NudeNet、SigLIP 或 VLM 权重，也不替用户下载权重。使用者须自行取得模型、匹配的 WD14 标签 CSV，并核对模型、标签和服务许可证。
 - `siglip`、`vlm` 等 optional extras 只提供常见运行时依赖；安装依赖不会自动下载模型权重或向外部服务发送图片。
 
 ## 设计原则 | Principles
@@ -80,6 +80,25 @@ outputs:
 
 配置默认不保留原始元数据值，只保留字段摘要和校验信息；如果业务确实需要原始值，必须由使用者在受控环境中显式开启，并单独评估隐私与留存期限。模型权重、访问令牌和本地路径不应提交到仓库。
 
+## 本地 ONNX 分析 | Local ONNX analysis
+
+CPU 运行可安装 `.[onnx]`，NVIDIA GPU 运行可安装 `.[onnx-gpu]`。两者不要同时安装；CUDA/cuDNN 与 ONNX Runtime 的版本必须由使用者按本机环境匹配。GPU provider 必须显式指定；如果 CUDA 不可用，命令会失败而不会自动降级到 CPU。`onnx-gpu` extra 只是 Windows/Linux 的安装便利项，本项目的实机 GPU 验证范围是 Windows x86-64，其他平台和架构请自行安装兼容的 ONNX Runtime build。
+
+```bash
+python -m pip install -e ".[onnx-gpu]"
+python -m image_curator extract ./curation-output/checkpoint.sqlite \
+  --moat-model /path/to/model.onnx \
+  --wd14-tags /path/to/selected_tags.csv \
+  --nudenet-model /path/to/nudenet.onnx \
+  --provider CUDAExecutionProvider \
+  --provider CPUExecutionProvider \
+  --limit 100
+```
+
+MoAT 在同一次 ONNX 调用中产生 WD14 评级、top tags 和归一化向量。NudeNet 使用同一次 Pillow 解码结果，逐类别做 NMS，并把 `explicit_score` 与 `intimate_covered_score` 分开保存。默认技术质量探针只在最长边 512 的缩略图上计算亮度、熵、明暗截断和边缘方差；这些值都需要用自己的人工真值校准，不能直接作为删除规则。
+
+`--adapter module:factory` 会加载调用方提供的 Python 代码。该代码与当前用户拥有相同的文件和网络权限，因此属于受信任扩展边界；核心程序会把同一次读取和解码的 bytes/Pillow 图像传给 adapter，但无法阻止恶意或错误的第三方 adapter 再次读取、写入或发送源文件。只使用经过审计的本地 adapter，并在受限账户或容器中运行不受信任扩展。
+
 ## 输出模型 | Output model
 
 每个资源的记录至少包含稳定 ID、路径快照、内容哈希、文件与嵌入元数据、阶段状态、置信度和错误信息。决策结果按以下字段分别写入：
@@ -103,7 +122,7 @@ ruff check .
 pytest -q
 ```
 
-需要本地向量运行时可安装 `.[numerics]`；需要 SigLIP 或 VLM 适配器时分别考虑 `.[siglip]`、`.[vlm]`。这些 extras 不包含模型权重。
+需要本地向量运算可安装 `.[numerics]`，ONNX CPU/GPU 分别使用 `.[onnx]`、`.[onnx-gpu]`；需要 SigLIP 或 VLM 适配器时分别考虑 `.[siglip]`、`.[vlm]`。这些 extras 不包含模型权重。
 
 提交前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请按 [SECURITY.md](SECURITY.md) 报告。项目采用 Apache-2.0，详见 [LICENSE](LICENSE)。
 

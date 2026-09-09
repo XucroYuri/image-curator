@@ -18,3 +18,5 @@ Remove personal data, credentials, access tokens, private hostnames and private 
 ## Safety boundaries
 
 The default policy is read-only. Do not enable file mutation on a source library until the generated plan, checkpoint and audit log have been reviewed. Model outputs are untrusted data: treat `unknown`, low confidence and parser errors as review states, and never use them as authorization to delete or publish files.
+
+Caller-supplied `module:factory` adapters execute as Python code with the current process permissions. The core passes them already-read bytes and a decoded image, but it cannot sandbox their file or network access. Audit adapters before use and run untrusted extensions inside an operating-system sandbox or restricted account.

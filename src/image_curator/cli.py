@@ -12,7 +12,8 @@ from .calibration import LabeledVector, calibrate_thresholds
 from .checkpoint import CheckpointStore
 from .classification import ClassificationConfig, classify_open_set
 from .extract import extract_pending
-from .inference import load_adapter
+from .inference import CombinedAnalysisAdapter, load_adapter
+from .onnx_adapters import OnnxDependencyError, WD14MoatNudeNetAdapter
 from .readonly import snapshot_source
 from .resources import discover_resources, plan_as_dict
 from .routing import route
@@ -71,7 +72,8 @@ def _load_labeled_vectors(path: Path) -> list[LabeledVector]:
 
 
 def _doctor(database: Path | None) -> dict[str, object]:
-    optional = {name: importlib.util.find_spec(name) is not None for name in ("numpy", "torch", "transformers")}
+    optional = {name: importlib.util.find_spec(name) is not None
+                for name in ("numpy", "onnxruntime", "torch", "transformers")}
     return {
         "python_optional_dependencies": optional,
         "database": str(database) if database else None,
@@ -102,6 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
     extract = commands.add_parser("extract", help="extract Pillow metadata and optional embeddings for pending assets")
     extract.add_argument("database", type=Path)
     extract.add_argument("--adapter", help="user-provided module:factory InferenceAdapter; no weights are bundled")
+    extract.add_argument("--moat-model", type=Path, help="explicit local WD14 MoAT ONNX model path")
+    extract.add_argument("--wd14-tags", type=Path, help="explicit local WD14 tag CSV path")
+    extract.add_argument("--nudenet-model", type=Path, help="optional explicit local NudeNet ONNX model path")
+    extract.add_argument("--provider", action="append",
+                         help="ONNX Runtime provider; repeat for fallback order (default: CPUExecutionProvider)")
     extract.add_argument("--limit", type=int, help="maximum pending unique assets to process")
     classify = commands.add_parser("classify", help="open-set classify a vector against user-provided references")
     classify.add_argument("--references", type=Path, required=True, help="JSON mapping labels to vectors")
@@ -126,8 +133,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def build_extract_adapter(args: argparse.Namespace):
+    """Combine explicit local ONNX and caller-plugin adapters without model discovery."""
+    adapters = []
+    if args.adapter:
+        adapters.append(load_adapter(args.adapter))
+    if bool(args.moat_model) != bool(args.wd14_tags):
+        raise ValueError("--moat-model and --wd14-tags must be supplied together")
+    if args.nudenet_model and not args.moat_model:
+        raise ValueError("--nudenet-model requires --moat-model and --wd14-tags")
+    if args.moat_model:
+        adapters.append(WD14MoatNudeNetAdapter.from_paths(
+            args.moat_model, args.wd14_tags, nudenet_model=args.nudenet_model,
+            providers=args.provider or ["CPUExecutionProvider"],
+        ))
+    if not adapters:
+        return None
+    return adapters[0] if len(adapters) == 1 else CombinedAnalysisAdapter(*adapters)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
     if args.command == "plan":
         _print_json(plan_as_dict(discover_resources()))
     elif args.command == "init-db":
@@ -153,7 +180,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                          "follow_symlinks": args.follow_symlinks, **result.as_dict(),
                          "states": database.status(), **database.inventory_counts()})
     elif args.command == "extract":
-        adapter = load_adapter(args.adapter) if args.adapter else None
+        try:
+            adapter = build_extract_adapter(args)
+        except (FileNotFoundError, OnnxDependencyError, TypeError, ValueError) as error:
+            parser.error(str(error))
         with CheckpointStore(args.database) as database:
             result = extract_pending(database, adapter=adapter, limit=args.limit)
             _print_json({"database": str(args.database), "adapter": adapter.name if adapter else None,
