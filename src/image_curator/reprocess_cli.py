@@ -61,6 +61,8 @@ def add_reprocess_parser(commands: argparse._SubParsersAction) -> None:
     process.add_argument("--cuda-dll-dir", type=Path, action="append", default=[])
     process.add_argument("--lease-seconds", type=int, default=300)
     process.add_argument("--limit", type=int)
+    process.add_argument("--resource-mode-file", type=Path,
+                         help="local JSON mode file; quiet pauses GPU work before workers start")
     _add_model_arguments(process)
 
     status = actions.add_parser("status", help="print one versioned run's state")
@@ -536,6 +538,15 @@ def handle_reprocess(args: argparse.Namespace) -> dict[str, Any]:
     if args.reprocess_command == "process":
         from .reprocess_runner import OnnxAdapterFactory, process_reprocess
 
+        if args.resource_mode_file and args.resource_mode_file.is_file():
+            with args.resource_mode_file.open(encoding="utf-8-sig") as handle:
+                mode = json.load(handle)
+            if mode.get("mode") == "quiet" or mode.get("gpu_enabled") is False:
+                with ReprocessStore(args.database) as store:
+                    store.set_run_status(args.run_id, "PAUSED", statistics={
+                        "paused_reason": "resource_mode_quiet", "resource_mode": "quiet"
+                    })
+                    return store.status(args.run_id) | {"resource_mode": "quiet", "started": False}
         manifest = _manifest_for(args)
         with ReprocessStore(args.database) as store:
             run = _existing_run(store, args.run_id)
