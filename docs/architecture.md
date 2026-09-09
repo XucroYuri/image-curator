@@ -17,7 +17,7 @@ flowchart LR
     E --> I[Audited candidate output]
 ```
 
-The diagram describes the target operating model. The Alpha package currently implements the read-only scanner, duplicate occurrence tracking, checkpoint store, resumable Pillow/adapter extraction, bounded technical evidence, resource planner, metadata evidence digest, an explicit user-supplied WD14 MoAT/NudeNet ONNX path, reference-set open-set classification, routing and threshold calibration. A caller supplies orchestration and adapters for SigLIP, VLM, and any model outside that local ONNX path.
+The Alpha package implements the read-only scanner, duplicate occurrence tracking, checkpoint store, resumable Pillow/adapter extraction, bounded technical evidence, resource planner, metadata evidence digest, an explicit user-supplied WD14 MoAT/NudeNet ONNX path, reference-set open-set classification, routing and threshold calibration. Versioned reprocessing adds immutable analysis runs, occurrence snapshots, calibrated decision versions and path-level diff reports. A caller still supplies adapters and policy for SigLIP, VLM, and any model outside the local ONNX path.
 
 ## Stage contracts
 
@@ -36,6 +36,8 @@ The diagram describes the target operating model. The Alpha package currently im
 The resource planner reads capacity visible to the process and chooses bounded workers, decode threads, batch size, prefetch, and pause thresholds. A production runner should persist the resource snapshot beside the run configuration and resume from the checkpoint. Check GPU utilization during startup or against a separate foreground-work queue; a running worker must not pause only because it observes its own GPU utilization. During a run, use free VRAM, RAM pressure and the foreground queue as the resource gates. Resource discovery must not change host configuration.
 
 The checkpoint is a derived artifact in a separate output directory. Asset IDs are content hashes, and enqueueing is idempotent, so a retry or resume does not move or rewrite source files. Duplicate content is extracted once while every observed source path remains in the `occurrences` table. A deployment may add a derived index, but source mutation remains disabled until a separate, reviewed policy explicitly enables it.
+
+Historical reprocessing stores feature results under `(run_id, asset_id)` and decisions under a separate `decision_id`. The parent process is the only SQLite writer; isolated inference workers receive immutable source snapshots and return compact evidence. A lease token rejects stale worker results after recovery. Missing, changed, deferred and published-locked paths remain occurrence-level facts, so a duplicate at another path cannot erase their audit meaning.
 
 ## Evidence and failure states
 

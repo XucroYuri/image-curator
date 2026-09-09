@@ -23,3 +23,13 @@ def test_transposed_output_is_accepted():
     transposed = [list(column) for column in zip(*rows)]
 
     assert len(classwise_nms(transposed)) == 1
+
+
+def test_realistic_wide_transposed_output_is_not_mistaken_for_rows():
+    rows = [_row(100, 100, 0.9, 16)] + [_row(0, 0, 0.0, 0) for _ in range(2099)]
+    transposed = [[list(column) for column in zip(*rows)]]
+
+    detections = classwise_nms(transposed)
+
+    assert len(detections) == 1
+    assert detections[0]["confidence"] == 0.9

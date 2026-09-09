@@ -15,6 +15,7 @@ from .extract import extract_pending
 from .inference import CombinedAnalysisAdapter, load_adapter
 from .onnx_adapters import OnnxDependencyError, WD14MoatNudeNetAdapter
 from .readonly import snapshot_source
+from .reprocess_cli import add_reprocess_parser, handle_reprocess
 from .resources import discover_resources, plan_as_dict
 from .routing import route
 from .scan import IMAGE_EXTENSIONS, scan_and_enqueue
@@ -130,6 +131,7 @@ def build_parser() -> argparse.ArgumentParser:
     calibrate.add_argument("--max-unknown-false-accept", type=float, default=0.05)
     calibrate.add_argument("--min-accepted", type=int, default=5)
     calibrate.add_argument("--min-unknown", type=int, default=1)
+    add_reprocess_parser(commands)
     return parser
 
 
@@ -203,4 +205,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                                       max_unknown_false_accept_rate=args.max_unknown_false_accept,
                                       min_accepted=args.min_accepted, min_unknown=args.min_unknown)
         _print_json(report)
+    elif args.command == "reprocess":
+        try:
+            _print_json(handle_reprocess(args))
+        except (FileNotFoundError, KeyError, RuntimeError, TypeError, ValueError) as error:
+            parser.error(str(error))
     return 0

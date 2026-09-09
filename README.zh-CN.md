@@ -39,12 +39,45 @@ python -m image_curator --help
 - 只读扫描、重复文件位置追踪、内容哈希 checkpoint 和可断点提取。
 - 有界技术质量信号和元数据证据摘要。
 - 使用调用方自备权重的 WD14 MoAT/NudeNet ONNX 分析。
+- 使用不可变模型/配置指纹和逐路径审计锁的版本化历史重处理。
 - 开放集参考集分类、阈值校准和路由原语。
 - `configs/readonly.example.yaml` 中提供跨运行器的策略模板。
 
-当前 CLI 使用显式参数，尚未把 YAML 配置自动编排成完整端到端运行。Alpha 版本不会自动移动、重命名、删除或发布文件，也不会把模型输出当作最终事实。发布前必须经过人工复核并保留审计记录。
+当前 CLI 使用显式参数，尚未把 YAML 配置自动编排成完整端到端运行。`reprocess` 命令可以编排冻结历史基线、本地特征提取、校准后的身份决策和只读差异报告，但不会移动、重命名、删除或发布文件，也不会把模型输出当作最终事实。发布前必须经过人工复核并保留审计记录。
 
 仓库不分发或下载 MoAT、NudeNet、SigLIP 或 VLM 权重。使用者须自行取得模型和匹配的 WD14 标签 CSV，并核对模型、标签和服务许可证。
+
+## 版本化重处理
+
+`reprocess create` 将旧迁移 CSV 中的图片行冻结成新的运行。sidecar 不参与推理；相同图片内容只处理一次，但每个实际路径都保留独立审计记录。截止时间后变化、缺失或新发现的路径会获得明确状态，不会按文件名猜测或静默丢弃。
+
+```bash
+python -m image_curator reprocess create ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 \
+  --baseline ./legacy-migration.csv \
+  --root ./sample-library \
+  --expected-images 100 \
+  --freeze-workers 4 \
+  --moat-model /path/to/model.onnx \
+  --wd14-tags /path/to/selected_tags.csv \
+  --nudenet-model /path/to/nudenet.onnx \
+  --provider CUDAExecutionProvider \
+  --cuda-dll-dir /path/to/cuda/bin \
+  --cuda-dll-dir /path/to/cudnn/bin
+
+python -m image_curator reprocess process ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 \
+  --moat-model /path/to/model.onnx \
+  --wd14-tags /path/to/selected_tags.csv \
+  --nudenet-model /path/to/nudenet.onnx \
+  --provider CUDAExecutionProvider
+
+python -m image_curator reprocess status ./curation-output/reprocess.sqlite --run-id legacy-2026-09
+python -m image_curator reprocess diff ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 --output ./curation-output/audit
+```
+
+`--root` 是强制授权边界；CSV 中的越界路径或重复路径会在任何图片读取前被拒绝。`process` 会验证再次提供的模型、标签、预处理和后处理指纹与不可变运行清单一致，并在每个 worker 加载前后再次核对。Windows 中 pip 安装的 CUDA/cuDNN DLL 不在默认搜索路径时，可重复提供 `--cuda-dll-dir`；这些本地路径不会写入数据库。执行器最多使用两个隔离推理 worker（选择 CUDA provider 时为 CUDA worker），由父进程独占 SQLite 写入，并可安全回收过期租约。旧状态为“已发帖”的路径始终保持有效状态锁定，新评分只作为审计证据。`reprocess decide` 必须提供显式参考向量和人工标注验证向量；若准确率与未知误接纳率门禁不满足，只记录失败的决策版本，不推荐阈值。
 
 ## 设计原则
 

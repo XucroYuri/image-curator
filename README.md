@@ -39,12 +39,45 @@ python -m image_curator --help
 - Read-only scanning, duplicate occurrence tracking, content-hash checkpoints, and resumable extraction.
 - Bounded technical-quality signals and metadata evidence summaries.
 - Caller-supplied WD14 MoAT/NudeNet ONNX analysis.
+- Versioned historical reprocessing with immutable model/configuration fingerprints and path-level audit locks.
 - Open-set reference classification, threshold calibration, and routing primitives.
 - A runner-neutral policy template in `configs/readonly.example.yaml`.
 
-The current CLI uses explicit arguments and does not yet orchestrate a complete end-to-end YAML run. The Alpha CLI does not automatically move, rename, delete, or publish files, and does not treat model output as ground truth. Human review and audit records are required before publication.
+The current CLI uses explicit arguments and does not yet orchestrate a complete end-to-end YAML run. The `reprocess` commands orchestrate a frozen historical baseline, local feature extraction, calibrated identity decisions, and read-only diff reports. They never move, rename, delete, or publish files, and do not treat model output as ground truth. Human review and audit records are required before publication.
 
 This repository does not distribute or download MoAT, NudeNet, SigLIP, or VLM weights. Users must obtain models and matching WD14 tag CSV files independently and verify model, tag, and service licenses.
+
+## Versioned reprocessing
+
+`reprocess create` freezes image rows from a legacy migration CSV into a new run. Sidecar rows are ignored for inference, identical image content is processed once, and every observed path remains a separate audit occurrence. Paths modified after the cutoff, missing paths, and newly discovered paths receive explicit states instead of being guessed or silently dropped.
+
+```bash
+python -m image_curator reprocess create ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 \
+  --baseline ./legacy-migration.csv \
+  --root ./sample-library \
+  --expected-images 100 \
+  --freeze-workers 4 \
+  --moat-model /path/to/model.onnx \
+  --wd14-tags /path/to/selected_tags.csv \
+  --nudenet-model /path/to/nudenet.onnx \
+  --provider CUDAExecutionProvider \
+  --cuda-dll-dir /path/to/cuda/bin \
+  --cuda-dll-dir /path/to/cudnn/bin
+
+python -m image_curator reprocess process ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 \
+  --moat-model /path/to/model.onnx \
+  --wd14-tags /path/to/selected_tags.csv \
+  --nudenet-model /path/to/nudenet.onnx \
+  --provider CUDAExecutionProvider
+
+python -m image_curator reprocess status ./curation-output/reprocess.sqlite --run-id legacy-2026-09
+python -m image_curator reprocess diff ./curation-output/reprocess.sqlite \
+  --run-id legacy-2026-09 --output ./curation-output/audit
+```
+
+`--root` is a mandatory authorization boundary; out-of-root and duplicate CSV paths are rejected before any image is read. The process command verifies model, tag, preprocessing, and postprocessing fingerprints against the immutable run manifest, again before and after each worker loads them. On Windows, repeat `--cuda-dll-dir` when pip-installed CUDA/cuDNN DLLs are outside the default search path; these local paths are never persisted. It uses up to two isolated inference workers (CUDA workers when that provider is selected) with one parent SQLite writer and resumes expired leases safely. A path whose old bucket is `published` remains locked at that effective bucket; new scores are audit evidence only. `reprocess decide` requires explicit reference vectors and human-labelled validation vectors. If the configured accuracy and unknown false-accept gates cannot be met, it records a failed decision version rather than recommending thresholds.
 
 ## Principles
 

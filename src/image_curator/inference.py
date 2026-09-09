@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib import import_module
 from pathlib import Path
@@ -38,6 +38,34 @@ class AnalysisAdapter(Protocol):
 
     def analyze(self, image: Image.Image, image_bytes: bytes, source: Path) -> AnalysisResult:
         """Return structured analysis without reading, writing, or decoding `source` again."""
+
+
+@runtime_checkable
+class ManifestedAdapter(Protocol):
+    """Adapter that can participate in a reproducible versioned run."""
+
+    name: str
+
+    def manifest(self) -> Mapping[str, Any]:
+        """Return a path-free manifest that fingerprints every inference input."""
+
+
+def require_adapter_manifest(adapter: object) -> dict[str, Any]:
+    """Validate a reproducible adapter manifest without accepting local paths."""
+    if not isinstance(adapter, ManifestedAdapter):
+        raise TypeError("versioned reprocessing requires an adapter manifest")
+    value = dict(adapter.manifest())
+    if not value.get("name") or not value.get("version"):
+        raise ValueError("adapter manifest requires non-empty name and version")
+    artifacts = value.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise ValueError("adapter manifest requires at least one fingerprinted artifact")
+    for artifact in artifacts:
+        if not isinstance(artifact, dict) or not artifact.get("role") or not artifact.get("sha256"):
+            raise ValueError("each adapter artifact requires role and sha256")
+        if "path" in artifact:
+            raise ValueError("adapter manifests must not persist local paths")
+    return value
 
 
 class CallableInferenceAdapter:

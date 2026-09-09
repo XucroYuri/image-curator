@@ -38,7 +38,10 @@ def _as_rows(output: Any) -> list[list[float]]:
     if rows and isinstance(rows[0], (int, float)):
         rows = [rows]
     expected_columns = 4 + len(NUDENET_CLASSES)
-    if rows and len(rows[0]) < expected_columns <= len(rows):
+    if rows and (
+        (len(rows) == expected_columns and len(rows[0]) != expected_columns)
+        or len(rows[0]) < expected_columns <= len(rows)
+    ):
         rows = [list(column) for column in zip(*rows)]
     if any(not isinstance(row, list) or len(row) < expected_columns for row in rows):
         raise ValueError("NudeNet output shape is not recognized")

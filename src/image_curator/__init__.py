@@ -1,6 +1,6 @@
 """Portable, read-only image curation primitives."""
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .checkpoint import CheckpointStore, WorkItem
 from .classification import ClassificationConfig, ClassificationDecision, classify_open_set

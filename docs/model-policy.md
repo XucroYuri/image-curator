@@ -30,6 +30,8 @@ Thresholds must be calibrated against explicit human truth for the intended data
 
 For each release of a model, reference set or preprocessing step:
 
+- Versioned reprocessing requires a path-free adapter manifest containing a logical version, preprocessing and postprocessing settings, and SHA-256 for every model and label file. Reference sets and human calibration labels are fingerprinted separately in each decision run. Resuming with different artifacts must fail before inference.
+
 - maintain positive, hard-negative and open-set unknown examples;
 - choose similarity and margin thresholds using a versioned calibration set;
 - report coverage and false acceptance for unknowns, not only aggregate accuracy;

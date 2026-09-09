@@ -8,6 +8,7 @@ metadata extraction remain lightweight.
 from __future__ import annotations
 
 import csv
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,14 @@ RATING_NAMES = frozenset({"general", "sensitive", "questionable", "explicit"})
 
 class OnnxDependencyError(RuntimeError):
     """Raised when a caller asked for local ONNX inference without its runtime."""
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _numpy_module() -> Any:
@@ -112,13 +121,14 @@ class WD14MoatNudeNetAdapter:
 
     def __init__(self, moat_session: Any, tags: Sequence[dict[str, str]], *, nudenet_session: Any | None = None,
                  embedding_dimensions: int | None = 1024, score_threshold: float = 0.15,
-                 nms_threshold: float = 0.45):
+                 nms_threshold: float = 0.45, reproducibility_manifest: dict[str, Any] | None = None):
         self.moat_session = moat_session
         self.tags = list(tags)
         self.nudenet_session = nudenet_session
         self.embedding_dimensions = embedding_dimensions
         self.score_threshold = score_threshold
         self.nms_threshold = nms_threshold
+        self._reproducibility_manifest = reproducibility_manifest
         self._numpy = _numpy_module()
 
     @classmethod
@@ -137,7 +147,32 @@ class WD14MoatNudeNetAdapter:
             )
         except Exception as error:
             raise ValueError(f"unable to initialize caller-supplied ONNX model: {error}") from error
-        return cls(moat_session, tags, nudenet_session=nudenet_session)
+        artifacts = [
+            {"role": "wd14_moat_onnx", "sha256": _sha256_file(moat_model)},
+            {"role": "wd14_tags_csv", "sha256": _sha256_file(wd14_tags)},
+        ]
+        if nudenet_model:
+            artifacts.append({"role": "nudenet_onnx", "sha256": _sha256_file(nudenet_model)})
+        manifest = {
+            "name": cls.name,
+            "version": "wd14-moat-nudenet-v1",
+            "embedding_dimensions": 1024,
+            "artifacts": artifacts,
+            "providers": list(providers),
+            "preprocessing": {"wd14": "bgr-square-448-v1", "nudenet": "rgb-letterbox-v1"},
+            "postprocessing": {"nudenet_score_threshold": 0.15, "nudenet_nms_iou": 0.45},
+        }
+        return cls(moat_session, tags, nudenet_session=nudenet_session,
+                   reproducibility_manifest=manifest)
+
+    def manifest(self) -> dict[str, Any]:
+        """Return fingerprints for versioned runs without exposing local model paths."""
+        if self._reproducibility_manifest is None:
+            raise ValueError("adapter constructed without fingerprinted local artifacts")
+        return {
+            **self._reproducibility_manifest,
+            "artifacts": [dict(item) for item in self._reproducibility_manifest["artifacts"]],
+        }
 
     def _wd14(self, image: Image.Image) -> tuple[dict[str, Any], tuple[float, ...]]:
         numpy = self._numpy

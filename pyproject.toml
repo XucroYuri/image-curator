@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "image-curator"
-version = "0.2.0"
+version = "0.3.0"
 description = "Resource-aware, resumable, metadata-first curation for large image libraries"
 readme = "README.md"
 requires-python = ">=3.11"

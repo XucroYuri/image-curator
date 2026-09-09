@@ -42,8 +42,17 @@ def _windows_memory() -> tuple[int, int]:
         import ctypes
 
         class MemoryStatus(ctypes.Structure):
-            _fields_ = [("length", ctypes.c_ulong), ("load", ctypes.c_ulong),
-                         ("total_phys", ctypes.c_ulonglong), ("avail_phys", ctypes.c_ulonglong)]
+            _fields_ = [
+                ("length", ctypes.c_ulong),
+                ("load", ctypes.c_ulong),
+                ("total_phys", ctypes.c_ulonglong),
+                ("avail_phys", ctypes.c_ulonglong),
+                ("total_page_file", ctypes.c_ulonglong),
+                ("avail_page_file", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong),
+                ("avail_virtual", ctypes.c_ulonglong),
+                ("avail_extended_virtual", ctypes.c_ulonglong),
+            ]
 
         status = MemoryStatus()
         status.length = ctypes.sizeof(status)
@@ -75,7 +84,8 @@ def discover_resources() -> ResourceProfile:
 
 def choose_resource_plan(profile: ResourceProfile) -> ResourcePlan:
     """Choose a small, conservative plan from a resource snapshot."""
-    workers = 2 if profile.gpu_free_mib >= 6144 and profile.cpu_logical >= 8 else 1
+    enough_ram = not profile.ram_available_gib or profile.ram_available_gib >= 8
+    workers = 2 if profile.gpu_free_mib >= 6144 and profile.cpu_logical >= 8 and enough_ram else 1
     batch_size = 4 if profile.gpu_free_mib >= 4096 else 2 if profile.gpu_free_mib >= 2560 else 1
     return ResourcePlan(
         workers=workers,
@@ -83,7 +93,7 @@ def choose_resource_plan(profile: ResourceProfile) -> ResourcePlan:
         batch_size=batch_size,
         prefetch_batches=2,
         pause_below_free_vram_mib=2048,
-        pause_above_gpu_util_percent=85,
+        pause_above_gpu_util_percent=95,
     )
 
 
