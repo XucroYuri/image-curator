@@ -6,7 +6,7 @@ import csv
 import json
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from .migration import (MigrationRow, MigrationStore, destination_for, execute_row,
                         inherit_nested_context, ready_directories, source_directory, validate_roots)
@@ -49,8 +49,7 @@ def _field(row: dict[str, str], *keys: str) -> str:
 
 def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[str] | None = None,
                   processed_sources: set[str] | None = None,
-                  known_snapshots: dict[str, tuple[int, int, str]] | None = None) -> list[MigrationRow]:
-    rows: list[MigrationRow] = []
+                  known_snapshots: dict[str, tuple[int, int, str]] | None = None) -> Iterator[MigrationRow]:
     seen_sources: set[str] = set()
     seen_targets: set[str] = set()
     with baseline.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -62,8 +61,11 @@ def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[
             source = Path(text)
             try: source.relative_to(root)
             except ValueError: raise ValueError("baseline path is outside authorized root")
-            if source.is_symlink(): raise ValueError(f"symbolic link is forbidden: {source}")
+            # Filter by batch before any SMB stat/symlink call.  This is what
+            # makes a completed-directory migration independent of the rest
+            # of the library's size and latency.
             if directories is not None and source_directory(source, root) not in directories: continue
+            if source.is_symlink(): raise ValueError(f"symbolic link is forbidden: {source}")
             if processed_sources is not None and source.suffix.casefold() in IMAGE_EXTENSIONS and str(source).casefold() not in processed_sources:
                 continue
             if not source.is_file(): continue  # missing historical paths remain in reprocess audit
@@ -94,8 +96,7 @@ def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[
                 destination_key = str(destination).casefold()
             if destination_key in seen_targets: raise ValueError(f"unresolvable target collision: {destination}")
             seen_sources.add(source_key); seen_targets.add(destination_key)
-            rows.append(MigrationRow(source, destination, digest, info.st_size, info.st_mtime_ns, state))
-    return rows
+            yield MigrationRow(source, destination, digest, info.st_size, info.st_mtime_ns, state)
 
 
 def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
