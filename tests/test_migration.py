@@ -89,8 +89,8 @@ def test_sync_plans_only_terminal_directories_and_processed_images(tmp_path):
         writer.writerow({"source": str(second), "kind": "image", "entity": "IP", "subject": "角色", "source_engine": "Grok Imagine"})
     feature = tmp_path / "feature.sqlite"
     with sqlite3.connect(feature) as db:
-        db.execute("CREATE TABLE run_occurrences(run_id TEXT, source_path TEXT, occurrence_state TEXT)")
-        db.executemany("INSERT INTO run_occurrences VALUES (?,?,?)", [("features", str(first), "PROCESSED"), ("features", str(second), "FROZEN")])
+        db.execute("CREATE TABLE run_occurrences(run_id TEXT, source_path TEXT, occurrence_state TEXT, source_size INTEGER, source_mtime_ns INTEGER, source_sha256 TEXT)")
+        db.executemany("INSERT INTO run_occurrences VALUES (?,?,?,?,?,?)", [("features", str(first), "PROCESSED", 1, first.stat().st_mtime_ns, "ca" * 32), ("features", str(second), "FROZEN", None, None, None)])
         db.commit()
     journal = tmp_path / "migration.sqlite"
     result = handle_migrate(_args(migrate_command="create", database=journal, run_id="one", baseline=baseline,
