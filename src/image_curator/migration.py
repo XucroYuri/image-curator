@@ -161,34 +161,31 @@ class MigrationStore:
 
     def create(self, run_id: str, root: Path, target: Path, rows: Iterable[MigrationRow]) -> int:
         if self.connection.execute("SELECT 1 FROM migration_runs WHERE run_id=?", (run_id,)).fetchone():
-            raise ValueError(f"migration run already exists: {run_id}")
-        records = list(rows)
+            return self.add_rows(run_id, rows)
         with self.connection:
             self.connection.execute("INSERT INTO migration_runs VALUES (?,?,?,?,?)",
                                     (run_id, _now(), str(root), str(target), "PLANNED"))
-            self.connection.executemany("""
-              INSERT INTO migration_items(run_id,source_path,destination_path,kind,source_size,source_mtime_ns,
-                source_sha256,effective_state,updated_at)
-              VALUES (?,?,?,?,?,?,?,?,?)
-            """, [(run_id, str(row.source), str(row.destination), row.source.suffix.casefold(), row.size,
-                    row.mtime_ns, row.sha256, row.state, _now()) for row in records])
-        return len(records)
+        return self.add_rows(run_id, rows)
 
     def add_rows(self, run_id: str, rows: Iterable[MigrationRow]) -> int:
         """Append newly settled directories to an existing plan idempotently."""
         if not self.connection.execute("SELECT 1 FROM migration_runs WHERE run_id=?", (run_id,)).fetchone():
             raise KeyError(f"unknown migration run: {run_id}")
-        records = list(rows)
         inserted = 0
-        with self.connection:
-            for row in records:
+        for row in rows:
+            existing = self.connection.execute(
+                "SELECT source_path FROM migration_items WHERE run_id=? AND destination_path=?",
+                (run_id, str(row.destination))).fetchone()
+            if existing and str(existing[0]) != str(row.source):
+                raise ValueError(f"destination collision: {row.destination}")
+            with self.connection:
                 cursor = self.connection.execute("""
                   INSERT OR IGNORE INTO migration_items(run_id,source_path,destination_path,kind,source_size,
                     source_mtime_ns,source_sha256,effective_state,updated_at)
                   VALUES (?,?,?,?,?,?,?,?,?)
                 """, (run_id, str(row.source), str(row.destination), row.source.suffix.casefold(), row.size,
                        row.mtime_ns, row.sha256, row.state, _now()))
-                inserted += cursor.rowcount
+            inserted += cursor.rowcount
         return inserted
 
     def run_status(self, run_id: str) -> str:
@@ -200,6 +197,10 @@ class MigrationStore:
     def rows(self, run_id: str) -> list[sqlite3.Row]:
         return self.connection.execute("SELECT * FROM migration_items WHERE run_id=? ORDER BY source_path",
                                        (run_id,)).fetchall()
+
+    def source_paths(self, run_id: str) -> set[str]:
+        return {str(row[0]).casefold() for row in self.connection.execute(
+            "SELECT source_path FROM migration_items WHERE run_id=?", (run_id,))}
 
     def mark(self, run_id: str, source: str, state: str, error: str | None = None) -> None:
         with self.connection:

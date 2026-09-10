@@ -49,7 +49,8 @@ def _field(row: dict[str, str], *keys: str) -> str:
 
 def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[str] | None = None,
                   processed_sources: set[str] | None = None,
-                  known_snapshots: dict[str, tuple[int, int, str]] | None = None) -> Iterator[MigrationRow]:
+                  known_snapshots: dict[str, tuple[int, int, str]] | None = None,
+                  existing_sources: set[str] | None = None) -> Iterator[MigrationRow]:
     seen_sources: set[str] = set()
     seen_targets: set[str] = set()
     with baseline.open("r", encoding="utf-8-sig", newline="") as handle:
@@ -65,11 +66,12 @@ def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[
             # makes a completed-directory migration independent of the rest
             # of the library's size and latency.
             if directories is not None and source_directory(source, root) not in directories: continue
+            source_key = str(source).casefold()
+            if existing_sources is not None and source_key in existing_sources: continue
             if source.is_symlink(): raise ValueError(f"symbolic link is forbidden: {source}")
             if processed_sources is not None and source.suffix.casefold() in IMAGE_EXTENSIONS and str(source).casefold() not in processed_sources:
                 continue
             if not source.is_file(): continue  # missing historical paths remain in reprocess audit
-            source_key = str(source).casefold()
             if source_key in seen_sources: continue
             info = source.stat()
             known = (known_snapshots or {}).get(source_key)
@@ -124,9 +126,13 @@ def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
         if requested_directories:
             directories = (set(requested_directories) if directories is None
                            else directories & set(requested_directories))
-        planned = _planned_rows(args.baseline, root, target, directories=directories,
-                                processed_sources=processed_sources, known_snapshots=known_snapshots)
         with MigrationStore(args.database) as store:
+            existing_sources = (store.source_paths(args.run_id)
+                                if store.connection.execute("SELECT 1 FROM migration_runs WHERE run_id=?",
+                                                             (args.run_id,)).fetchone() else set())
+            planned = _planned_rows(args.baseline, root, target, directories=directories,
+                                    processed_sources=processed_sources, known_snapshots=known_snapshots,
+                                    existing_sources=existing_sources)
             count = store.create(args.run_id, root, target, planned)
             return {"run_id": args.run_id, "planned": count, "eligible_directories": sorted(directories) if directories is not None else None,
                     "database": str(args.database),
@@ -144,9 +150,10 @@ def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
                     known_snapshots[key] = (int(row[1]), int(row[2]), str(row[3]))
         if args.directory:
             directories &= set(args.directory)
-        planned = _planned_rows(args.baseline, root, target, directories=directories,
-                                processed_sources=processed_sources, known_snapshots=known_snapshots)
         with MigrationStore(args.database) as store:
+            planned = _planned_rows(args.baseline, root, target, directories=directories,
+                                    processed_sources=processed_sources, known_snapshots=known_snapshots,
+                                    existing_sources=store.source_paths(args.run_id))
             count = store.add_rows(args.run_id, planned)
             return {"run_id": args.run_id, "appended": count,
                     "eligible_directories": sorted(directories), "states": store.summary(args.run_id),
