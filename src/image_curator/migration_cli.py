@@ -48,7 +48,8 @@ def _field(row: dict[str, str], *keys: str) -> str:
 
 
 def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[str] | None = None,
-                  processed_sources: set[str] | None = None) -> list[MigrationRow]:
+                  processed_sources: set[str] | None = None,
+                  known_snapshots: dict[str, tuple[int, int, str]] | None = None) -> list[MigrationRow]:
     rows: list[MigrationRow] = []
     seen_sources: set[str] = set()
     seen_targets: set[str] = set()
@@ -68,7 +69,14 @@ def _planned_rows(baseline: Path, root: Path, target: Path, *, directories: set[
             if not source.is_file(): continue  # missing historical paths remain in reprocess audit
             source_key = str(source).casefold()
             if source_key in seen_sources: continue
-            info = source.stat(); digest = sha256_file(source)
+            info = source.stat()
+            known = (known_snapshots or {}).get(source_key)
+            if known is not None:
+                if info.st_size != known[0] or info.st_mtime_ns != known[1]:
+                    continue  # source changed after inference; leave it for a retry run
+                digest = known[2]
+            else:
+                digest = sha256_file(source)
             entity, subject, engine = inherit_nested_context(
                 source, root, entity=_field(raw, "entity", "ip", "project"),
                 subject=_field(raw, "subject", "character", "name"),
@@ -95,6 +103,7 @@ def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
         root, target = validate_roots(args.root, args.target)
         directories = None
         processed_sources = None
+        known_snapshots = None
         feature_db = getattr(args, "feature_db", None)
         feature_run_id = getattr(args, "feature_run_id", None)
         if feature_db:
@@ -102,15 +111,20 @@ def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
                 raise ValueError("--feature-run-id is required with --feature-db")
             directories = ready_directories(feature_db, feature_run_id, root)
             with sqlite3.connect(feature_db) as connection:
-                processed_sources = {str(row[0]).casefold() for row in connection.execute(
-                    "SELECT source_path FROM run_occurrences WHERE run_id=? AND occurrence_state='PROCESSED'",
-                    (feature_run_id,))}
+                processed_sources = set()
+                known_snapshots = {}
+                for row in connection.execute(
+                    "SELECT source_path,source_size,source_mtime_ns,source_sha256 FROM run_occurrences "
+                    "WHERE run_id=? AND occurrence_state='PROCESSED'", (feature_run_id,)):
+                    key = str(row[0]).casefold(); processed_sources.add(key)
+                    if row[1] is not None and row[2] is not None and row[3]:
+                        known_snapshots[key] = (int(row[1]), int(row[2]), str(row[3]))
         requested_directories = getattr(args, "directory", None)
         if requested_directories:
             directories = (set(requested_directories) if directories is None
                            else directories & set(requested_directories))
         planned = _planned_rows(args.baseline, root, target, directories=directories,
-                                processed_sources=processed_sources)
+                                processed_sources=processed_sources, known_snapshots=known_snapshots)
         with MigrationStore(args.database) as store:
             count = store.create(args.run_id, root, target, planned)
             return {"run_id": args.run_id, "planned": count, "eligible_directories": sorted(directories) if directories is not None else None,
@@ -120,13 +134,17 @@ def handle_migrate(args: argparse.Namespace) -> dict[str, Any]:
         root, target = validate_roots(args.root, args.target)
         directories = ready_directories(args.feature_db, args.feature_run_id, root)
         with sqlite3.connect(args.feature_db) as connection:
-            processed_sources = {str(row[0]).casefold() for row in connection.execute(
-                "SELECT source_path FROM run_occurrences WHERE run_id=? AND occurrence_state='PROCESSED'",
-                (args.feature_run_id,))}
+            processed_sources = set(); known_snapshots = {}
+            for row in connection.execute(
+                "SELECT source_path,source_size,source_mtime_ns,source_sha256 FROM run_occurrences "
+                "WHERE run_id=? AND occurrence_state='PROCESSED'", (args.feature_run_id,)):
+                key = str(row[0]).casefold(); processed_sources.add(key)
+                if row[1] is not None and row[2] is not None and row[3]:
+                    known_snapshots[key] = (int(row[1]), int(row[2]), str(row[3]))
         if args.directory:
             directories &= set(args.directory)
         planned = _planned_rows(args.baseline, root, target, directories=directories,
-                                processed_sources=processed_sources)
+                                processed_sources=processed_sources, known_snapshots=known_snapshots)
         with MigrationStore(args.database) as store:
             count = store.add_rows(args.run_id, planned)
             return {"run_id": args.run_id, "appended": count,
